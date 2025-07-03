@@ -1,0 +1,104 @@
+# src/roamers/multi_robot_joy_habitat_roamer.py
+import roslaunch
+import rospy
+import shlex
+import time
+from subprocess import Popen
+from ros_x_habitat.srv import Roam
+from src.constants.constants import PACKAGE_NAME, ServiceNames
+
+
+class MultiRobotJoyHabitatRoamer:
+    def __init__(
+        self,
+        launch_file_path: str,
+        hab_env_node_path: str,
+        hab_env_config_path: str,
+        num_robots: int,
+        video_frame_period: int,
+        enable_mapping: bool = False,
+    ):
+        self.num_robots = num_robots
+        self.video_frame_period = video_frame_period
+        self.enable_mapping = enable_mapping
+        
+        # Create a node
+        rospy.init_node("multi_robot_joy_habitat_roamer", anonymous=True)
+
+        # Start the launch files
+        launch_files = [launch_file_path]
+        if enable_mapping:
+            # 멀티로봇용 매핑 launch 파일 사용
+            mapping_launch_path = "launch/rtabmap_mapping_multi.launch"
+            launch_files.append(mapping_launch_path)
+            rospy.loginfo(f"Mapping enabled with launch file: {mapping_launch_path}")
+            
+        self.uuid = roslaunch.rlutil.get_or_generate_uuid(None, False)
+        roslaunch.configure_logging(self.uuid)
+        self.launch = roslaunch.parent.ROSLaunchParent(self.uuid, launch_files)
+        self.launch.start()
+        rospy.loginfo(f"Launch files started: {launch_files}")
+
+        # Start multiple env nodes
+        self.env_processes = []
+        self.roam_services = []
+        
+        for robot_id in range(num_robots):
+            hab_env_node_name = f"robot_{robot_id}_env_node"
+            
+            # Start env node with robot namespace
+            env_node_args = shlex.split(
+                f"python {hab_env_node_path} "
+                f"--node-name {hab_env_node_name} "
+                f"--task-config {hab_env_config_path} "
+                f"--enable-physics-sim "
+                f"--use-continuous-agent "
+                f"--robot-namespace robot_{robot_id}"
+            )
+            
+            env_process = Popen(env_node_args)
+            self.env_processes.append(env_process)
+            
+            # Set up roam service client for each robot
+            roam_service_name = f"{PACKAGE_NAME}/robot_{robot_id}/{hab_env_node_name}/{ServiceNames.ROAM}"
+            roam_service = rospy.ServiceProxy(roam_service_name, Roam)
+            self.roam_services.append(roam_service)
+            
+            rospy.loginfo(f"Started robot_{robot_id} environment node")
+            
+            # 매핑이 활성화된 경우 더 많은 시간 대기
+            wait_time = 5.0 if enable_mapping else 3.0
+            time.sleep(wait_time)
+
+    def roam_until_shutdown(self, episode_id_last: str = "-1", scene_id_last: str = ""):
+        try:
+            # Wait for all services to be available
+            for i, roam_service in enumerate(self.roam_services):
+                service_name = f"{PACKAGE_NAME}/robot_{i}/robot_{i}_env_node/{ServiceNames.ROAM}"
+                rospy.loginfo(f"Waiting for service: {service_name}")
+                rospy.wait_for_service(service_name, timeout=60)
+                
+            # Start roaming for all robots
+            for i, roam_service in enumerate(self.roam_services):
+                try:
+                    resp = roam_service(episode_id_last, scene_id_last, True, self.video_frame_period)
+                    assert resp.ack
+                    rospy.loginfo(f"Robot {i} roaming started successfully")
+                except rospy.ServiceException as e:
+                    rospy.logerr(f"Failed to initiate roam service for robot {i}: {e}")
+                    
+            rospy.loginfo("All robots started. Check topics with 'rostopic list'")
+            self.launch.spin()
+        except Exception as e:
+            rospy.logerr(f"Error in roaming: {e}")
+        finally:
+            # Clean up all processes
+            rospy.loginfo("Shutting down all robots...")
+            for i, env_process in enumerate(self.env_processes):
+                try:
+                    env_process.terminate()
+                    env_process.wait(timeout=5)
+                except:
+                    env_process.kill()
+                rospy.loginfo(f"Robot {i} environment node stopped")
+            self.launch.shutdown()

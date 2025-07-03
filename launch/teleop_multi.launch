@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<!-- launch/teleop_multi.launch -->
+<launch>
+  <!-- Joy node (single joystick for all robots) -->
+  <node name="joy_node" pkg="joy" type="joy_node">
+    <param name="dev" value="/dev/input/js0"/>
+    <param name="autorepeat_rate" value="20"/>
+    <param name="coalesce_interval" value="0.05"/>
+  </node>
+
+  <!-- Joy controller that publishes to both robots -->
+  <node name="joy_controller" pkg="ros_x_habitat" type="joy_controller.py" output="screen">
+    <remap from="cmd_vel" to="/robot_0/cmd_vel"/>
+  </node>
+
+  <!-- Robot 0 visualization -->
+  <group ns="robot_0">
+    <node name="image_view_rgb" pkg="image_view" type="image_view">
+      <remap from="image" to="rgb"/>
+    </node>
+    <node name="image_view_depth" pkg="image_view" type="image_view">
+      <remap from="image" to="depth"/>
+    </node>
+  </group>
+
+  <!-- Robot 1 visualization -->
+  <group ns="robot_1">
+    <node name="image_view_rgb_1" pkg="image_view" type="image_view">
+      <remap from="image" to="rgb"/>
+    </node>
+    <node name="image_view_depth_1" pkg="image_view" type="image_view">
+      <remap from="image" to="depth"/>
+    </node>
+  </group>
+</launch>

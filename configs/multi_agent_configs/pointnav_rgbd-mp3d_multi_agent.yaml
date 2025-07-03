@@ -1,0 +1,147 @@
+# Multi-Agent Habitat Configuration
+# Based on pointnav_rgbd-mp3d_with_physics.yaml
+
+ENVIRONMENT:
+  MAX_EPISODE_STEPS: 500
+
+SIMULATOR:
+  TYPE: "Sim-Phys"  # Use existing physics simulator for now
+  ACTION_SPACE_CONFIG: "v0"
+  FORWARD_STEP_SIZE: 0.25
+  TURN_ANGLE: 10
+  TILT_ANGLE: 15
+  
+  # Multi-agent configuration
+  DEFAULT_AGENT_ID: 0
+  AGENTS: ["AGENT_0", "AGENT_1"]  # Can be extended for more agents
+  
+  # Agent 0 configuration
+  AGENT_0:
+    HEIGHT: 1.5
+    RADIUS: 0.1
+    MASS: 32.0
+    LINEAR_ACCELERATION: 20.0
+    ANGULAR_ACCELERATION: 12.56
+    LINEAR_FRICTION: 0.5
+    ANGULAR_FRICTION: 1.0
+    COEFFICIENT_OF_RESTITUTION: 0.0
+    SENSORS: ["RGB_SENSOR", "DEPTH_SENSOR"]
+    IS_SET_START_STATE: False
+    START_POSITION: [0, 0, 0]
+    START_ROTATION: [0, 0, 0, 1]
+  
+  # Agent 1 configuration  
+  AGENT_1:
+    HEIGHT: 1.5
+    RADIUS: 0.1
+    MASS: 32.0
+    LINEAR_ACCELERATION: 20.0
+    ANGULAR_ACCELERATION: 12.56
+    LINEAR_FRICTION: 0.5
+    ANGULAR_FRICTION: 1.0
+    COEFFICIENT_OF_RESTITUTION: 0.0
+    SENSORS: ["RGB_SENSOR", "DEPTH_SENSOR"]
+    IS_SET_START_STATE: False
+    START_POSITION: [2.0, 0, 0]  # 2 meters apart from agent 0
+    START_ROTATION: [0, 0, 0, 1]
+
+  # Habitat-sim configuration
+  HABITAT_SIM_V0:
+    GPU_DEVICE_ID: 0
+    GPU_GPU: False
+    ALLOW_SLIDING: True
+    ENABLE_PHYSICS: True
+    PHYSICS_CONFIG_FILE: "./data/default.physics_config.json"
+
+  # RGB sensor configuration
+  RGB_SENSOR:
+    TYPE: "HabitatSimRGBSensor"
+    HEIGHT: 480
+    WIDTH: 640
+    HFOV: 90
+    POSITION: [0, 1.25, 0]
+    ORIENTATION: [0, 0, 0]  # Facing forward
+
+  # Depth sensor configuration  
+  DEPTH_SENSOR:
+    TYPE: "HabitatSimDepthSensor"
+    HEIGHT: 480
+    WIDTH: 640
+    HFOV: 90
+    MIN_DEPTH: 0.0
+    MAX_DEPTH: 10.0
+    NORMALIZE_DEPTH: False
+    POSITION: [0, 1.25, 0]
+    ORIENTATION: [0, 0, 0]  # Facing forward
+
+  # Scene configuration
+  SCENE: data/scene_datasets/mp3d/2t7WUuJeko7/2t7WUuJeko7.glb
+  SCENE_DATASET: data/scene_datasets/mp3d/mp3d.scene_dataset_config.json
+
+TASK:
+  TYPE: "Nav-v0"
+  
+  # Task sensors
+  SENSORS: ["POINTGOAL_WITH_GPS_COMPASS_SENSOR"]
+  
+  POINTGOAL_WITH_GPS_COMPASS_SENSOR:
+    TYPE: "PointGoalWithGPSCompassSensor"
+    GOAL_FORMAT: "POLAR"
+    DIMENSIONALITY: 2
+
+  # Success conditions
+  SUCCESS_DISTANCE: 0.2
+  
+  # Measurements for evaluation
+  MEASUREMENTS: ["DISTANCE_TO_GOAL", "SUCCESS", "SPL"]
+  
+  DISTANCE_TO_GOAL:
+    TYPE: "DistanceToGoal"
+    DISTANCE_TO: "POINT"
+    
+  SUCCESS:
+    TYPE: "Success"
+    SUCCESS_DISTANCE: 0.2
+    
+  SPL:
+    TYPE: "SPL"
+
+# Dataset configuration for multi-agent scenarios
+DATASET:
+  TYPE: "PointNav-v1"
+  SPLIT: "train"
+  DATA_PATH: "data/datasets/pointnav/mp3d/v1/{split}/{split}.json.gz"
+  SCENES_DIR: "data/scene_datasets/"
+
+# Multi-agent specific settings
+MULTI_AGENT:
+  # Collision handling between agents
+  INTER_AGENT_COLLISION: True
+  COLLISION_PENALTY: -0.1
+  
+  # Coordination settings
+  SHARED_REWARD: False  # Each agent has individual rewards
+  OBSERVATION_SHARING: False  # Agents don't share observations
+  
+  # Communication settings
+  ENABLE_COMMUNICATION: False
+  COMMUNICATION_RANGE: 5.0
+
+# Video generation settings for multi-agent scenarios
+VIDEO_OPTION: ["disk"]
+VIDEO_DIR: "videos/multi_agent/"
+VIDEO_RENDER_TOP_DOWN_MAP: True
+VIDEO_RENDER_ALL_INFO: True
+
+# Performance settings
+EVAL_CKPT_PATH_DIR: "data/checkpoints"
+NUM_ENVIRONMENTS: 1
+CHECKPOINT_FOLDER: "data/checkpoints"
+EVAL:
+  SPLIT: "val"
+
+# Physics settings (inherited from single agent but applied to all)
+PHYSICS:
+  STATIC_FRICTION: 0.4
+  DYNAMIC_FRICTION: 0.4
+  RESTITUTION: 0.05

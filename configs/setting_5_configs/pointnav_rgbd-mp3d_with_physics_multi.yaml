@@ -1,3 +1,4 @@
+# configs/setting_5_configs/pointnav_rgbd-mp3d_with_physics_multi.yaml
 ENVIRONMENT:
   MAX_EPISODE_STEPS: 500
   ITERATOR_OPTIONS:
@@ -16,13 +17,12 @@ PHYSICS_SIMULATOR:
     GPU_DEVICE_ID: 0
     ENABLE_PHYSICS: True
   RGB_SENSOR:
-    #hihi
-    WIDTH: 512
-    HEIGHT: 512
+    WIDTH: 256
+    HEIGHT: 256
     POSITION: [0, 0.65, 0]
   DEPTH_SENSOR:
-    WIDTH: 512
-    HEIGHT: 512
+    WIDTH: 256
+    HEIGHT: 256
     POSITION: [0, 0.65, 0]
     NORMALIZE_DEPTH: False
 
@@ -44,3 +44,8 @@ DATASET:
   DATA_PATH: data/datasets/pointnav/mp3d/v1/{split}/{split}.json.gz
 
 VIDEO_OPTION: ["disk"]
+
+# Multi-robot specific settings
+MULTI_ROBOT:
+  NUM_ROBOTS: 2
+  ROBOT_SPAWN_DISTANCE: 2.0  # Distance between robot spawn points

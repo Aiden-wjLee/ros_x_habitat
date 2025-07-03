@@ -83,3 +83,6 @@ pyspy_profiles/
 
 # Gazebo worlds
 worlds/
+
+trash*
+*.zip

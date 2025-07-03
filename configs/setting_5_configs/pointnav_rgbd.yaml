@@ -1,3 +1,6 @@
+# configs/setting_5_configs/pointnav_rgbd-mp3d_with_physics_multi.yaml
+# 기존 config 구조를 그대로 유지하되 멀티로봇에 필요한 부분만 추가
+
 ENVIRONMENT:
   MAX_EPISODE_STEPS: 500
   ITERATOR_OPTIONS:
@@ -6,8 +9,8 @@ ENVIRONMENT:
     CYCLE: False
 
 PHYSICS_SIMULATOR:
-  TYPE: "Sim-Phys"
-  AGENTS: ['AGENT_0']
+  TYPE: "Sim-Phys"  # 기존 단일 로봇 시뮬레이터 사용
+  AGENTS: ['AGENT_0']  # 기본 에이전트 설정 (각 환경이 하나씩)
   AGENT_0:
     SENSORS: ['RGB_SENSOR', 'DEPTH_SENSOR']
     ANGULAR_FRICTION: 0.0
@@ -16,13 +19,12 @@ PHYSICS_SIMULATOR:
     GPU_DEVICE_ID: 0
     ENABLE_PHYSICS: True
   RGB_SENSOR:
-    #hihi
-    WIDTH: 512
-    HEIGHT: 512
+    WIDTH: 256
+    HEIGHT: 256
     POSITION: [0, 0.65, 0]
   DEPTH_SENSOR:
-    WIDTH: 512
-    HEIGHT: 512
+    WIDTH: 256
+    HEIGHT: 256
     POSITION: [0, 0.65, 0]
     NORMALIZE_DEPTH: False
 
@@ -44,3 +46,13 @@ DATASET:
   DATA_PATH: data/datasets/pointnav/mp3d/v1/{split}/{split}.json.gz
 
 VIDEO_OPTION: ["disk"]
+VIDEO_DIR: "videos/multi_agent"
+
+# 멀티로봇 시작 위치 (코드에서 동적으로 설정)
+MULTI_ROBOT:
+  ROBOT_SPACING: 2.0  # 로봇 간 간격 (미터)
+  START_POSITIONS:
+    - [0.0, 0.0, 0.0]    # Robot 0
+    - [2.0, 0.0, 0.0]    # Robot 1  
+    - [4.0, 0.0, 0.0]    # Robot 2
+    - [6.0, 0.0, 0.0]    # Robot 3

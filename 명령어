@@ -1,0 +1,7 @@
+python src/scripts/roam_with_joy_multi.py \
+  --hab-env-config-path /root/catkin_ws/src/ros_x_habitat/configs/setting_5_configs/pointnav_rgbd-mp3d_with_physics_multi.yaml \
+  --num-robots 2 \
+  --episode-id 0 \
+  --scene-id data/scene_datasets/mp3d/2t7WUuJeko7/2t7WUuJeko7.glb \
+  --video-frame-period 10 \
+  --enable-mapping

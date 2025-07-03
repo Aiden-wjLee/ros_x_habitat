@@ -1,0 +1,39 @@
+# config/multi_robot_diagnostics.yaml
+
+pub_rate: 1.0
+base_path: ""
+analyzers:
+  multi_robot_system:
+    type: diagnostic_aggregator/AnalyzerGroup
+    path: Multi-Robot System
+    analyzers:
+      robot_status:
+        type: diagnostic_aggregator/GenericAnalyzer
+        path: Robot Status
+        find_and_remove_prefix: ["robot_"]
+        contains: ["robot_", "status"]
+        
+      navigation:
+        type: diagnostic_aggregator/GenericAnalyzer
+        path: Navigation
+        contains: ["navigation", "move_base", "path"]
+        
+      sensors:
+        type: diagnostic_aggregator/GenericAnalyzer
+        path: Sensors
+        contains: ["camera", "depth", "rgb", "sensor"]
+        
+      communication:
+        type: diagnostic_aggregator/GenericAnalyzer
+        path: Communication
+        contains: ["teleop", "joy", "cmd_vel"]
+        
+      safety:
+        type: diagnostic_aggregator/GenericAnalyzer
+        path: Safety
+        contains: ["collision", "emergency", "safety"]
+        
+      formation:
+        type: diagnostic_aggregator/GenericAnalyzer
+        path: Formation
+        contains: ["formation", "coordination"]
