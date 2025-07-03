@@ -1,5 +1,6 @@
 #!/usr/bin/env python
-# src/nodes/habitat_env_node.py
+# src/nodes/habitat_env_node.py (전체 파일 교체)
+
 import argparse
 from threading import Condition, Lock
 
@@ -28,11 +29,6 @@ from src.measures.top_down_map_for_roam import (
     TopDownMapForRoam,
     add_top_down_map_for_roam_to_config,
 )
-from nav_msgs.msg import Odometry
-from sensor_msgs.msg import LaserScan
-from geometry_msgs.msg import TransformStamped
-import tf2_ros
-from tf.transformations import quaternion_from_euler
 
 
 class HabitatEnvNode:
@@ -43,218 +39,215 @@ class HabitatEnvNode:
     """
 
     def __init__(
-            self,
-            node_name: str,
-            config_paths: str = None,
-            enable_physics_sim: bool = False,
-            use_continuous_agent: bool = False,
-            pub_rate: float = 5.0,
-            robot_namespace: str = "",
-        ):
-            r"""
-            Instantiates a node incapsulating a Habitat sim environment.
-            :param node_name: name of the node
-            :param config_paths: path to Habitat env config file
-            :param enable_physics_sim: if true, turn on dynamic simulation
-                with Bullet
-            :param use_continuous_agent: if true, the agent would be one
-                that produces continuous velocities. Must be false if using
-                discrete simulator
-            :pub_rate: the rate at which the node publishes sensor readings
-            :param robot_namespace: namespace for multi-robot support
-            """
-            # precondition check
-            if use_continuous_agent:
-                assert enable_physics_sim
+        self,
+        node_name: str,
+        config_paths: str = None,
+        enable_physics_sim: bool = False,
+        use_continuous_agent: bool = False,
+        pub_rate: float = 5.0,
+        robot_namespace: str = "",
+    ):
+        r"""
+        Instantiates a node incapsulating a Habitat sim environment.
+        :param node_name: name of the node
+        :param config_paths: path to Habitat env config file
+        :param enable_physics_sim: if true, turn on dynamic simulation
+            with Bullet
+        :param use_continuous_agent: if true, the agent would be one
+            that produces continuous velocities. Must be false if using
+            discrete simulator
+        :pub_rate: the rate at which the node publishes sensor readings
+        :param robot_namespace: namespace for this robot
+        """
+        # precondition check
+        if use_continuous_agent:
+            assert enable_physics_sim
 
-            # store robot namespace
-            self.robot_namespace = robot_namespace
-
-            # initialize node
-            self.node_name = node_name
-            rospy.init_node(self.node_name)
-
-            rospy.on_shutdown(self.on_exit_generate_video)
-
-            # set up environment config
-            self.config = get_config(config_paths)
-            # embed top-down map in config
-            self.config.defrost()
-            self.config.TASK.MEASUREMENTS.append("TOP_DOWN_MAP")
-            self.config.freeze()
-            add_top_down_map_for_roam_to_config(self.config)
-
-            # instantiate environment
-            self.enable_physics_sim = enable_physics_sim
-            self.use_continuous_agent = use_continuous_agent
-            # overwrite env config if physics enabled
-            if self.enable_physics_sim:
-                HabitatSimEvaluator.overwrite_simulator_config(self.config)
-            # define environment
-            self.env = HabitatEvalRLEnv(
-                config=self.config, enable_physics=self.enable_physics_sim
-            )
-
-            # shutdown is set to true by eval_episode() to indicate the
-            # evaluator wants the node to shutdown
-            self.shutdown_lock = Lock()
-            with self.shutdown_lock:
-                self.shutdown = False
-
-            # enable_eval is set to true by eval_episode() to allow
-            # publish_sensor_observations() and step() to run
-            # enable_eval is set to false in one of the three conditions:
-            # 1) by publish_and_step_for_eval() after an episode is done;
-            # 2) by publish_and_step_for_roam() after a roaming session
-            #    is done;
-            # 3) by main() after all episodes have been evaluated.
-            # all_episodes_evaluated is set to True by main() to indicate
-            # no more episodes left to evaluate. eval_episodes() then signals
-            # back to evaluator, and set it to False again for re-use
-            self.all_episodes_evaluated = False
-            self.enable_eval = False
-            self.enable_eval_cv = Condition()
-
-            # enable_reset is set to true by eval_episode() or roam() to allow
-            # reset() to run
-            # enable_reset is set to false by reset() after simulator reset
-            self.enable_reset_cv = Condition()
-            with self.enable_reset_cv:
-                self.enable_reset = False
-                self.enable_roam = False
-                self.episode_id_last = None
-                self.scene_id_last = None
-
-            # agent velocities/action and variables to keep things synchronized
-            self.command_cv = Condition()
-            with self.command_cv:
-                if self.use_continuous_agent:
-                    self.linear_vel = None
-                    self.angular_vel = None
-                else:
-                    self.action = None
-                self.count_steps = None
-                self.new_command_published = False
-
-            self.observations = None
-
-            # timing variables and guarding lock
-            self.timing_lock = Lock()
-            with self.timing_lock:
-                self.t_reset_elapsed = None
-                self.t_sim_elapsed = None
-
-            # video production variables
-            self.make_video = False
-            self.observations_per_episode = []
-            self.video_frame_counter = 0
-            self.video_frame_period = 1  # NOTE: frame rate defined as x steps/frame
-
-            # TF broadcaster 추가
-            self.tf_broadcaster = tf2_ros.TransformBroadcaster()
+        # initialize node
+        self.node_name = node_name
+        self.robot_namespace = robot_namespace
+        
+        # Set namespace if provided
+        if robot_namespace:
+            full_node_name = f"{robot_namespace}_{node_name}"
+        else:
+            full_node_name = node_name
             
-            # 로봇 상태 추적용 변수 추가
-            self.prev_position = None
-            self.prev_orientation = None
-            self.prev_time = None
+        rospy.init_node(full_node_name)
 
-            # set up logger
-            self.logger = utils_logging.setup_logger(self.node_name)
+        rospy.on_shutdown(self.on_exit_generate_video)
 
-            # establish evaluation service server
-            service_prefix = f"{PACKAGE_NAME}/{robot_namespace}/{node_name}" if robot_namespace else f"{PACKAGE_NAME}/{node_name}"
-            self.eval_service = rospy.Service(
-                f"{service_prefix}/{ServiceNames.EVAL_EPISODE}",
-                EvalEpisode,
-                self.eval_episode,
-            )
+        # set up environment config
+        self.config = get_config(config_paths)
+        # embed top-down map in config
+        self.config.defrost()
+        self.config.TASK.MEASUREMENTS.append("TOP_DOWN_MAP")
+        self.config.freeze()
+        add_top_down_map_for_roam_to_config(self.config)
 
-            # establish roam service server
-            self.roam_service = rospy.Service(
-                f"{service_prefix}/{ServiceNames.ROAM}", Roam, self.roam
-            )
+        # instantiate environment
+        self.enable_physics_sim = enable_physics_sim
+        self.use_continuous_agent = use_continuous_agent
+        # overwrite env config if physics enabled
+        if self.enable_physics_sim:
+            HabitatSimEvaluator.overwrite_simulator_config(self.config)
+        # define environment
+        self.env = HabitatEvalRLEnv(
+            config=self.config, enable_physics=self.enable_physics_sim
+        )
 
-            # define the max rate at which we publish sensor readings
-            self.pub_rate = float(pub_rate)
+        # shutdown is set to true by eval_episode() to indicate the
+        # evaluator wants the node to shutdown
+        self.shutdown_lock = Lock()
+        with self.shutdown_lock:
+            self.shutdown = False
 
-            # environment publish and subscribe queue size
-            # TODO: make them configurable by constructor argument
-            self.sub_queue_size = 10
-            self.pub_queue_size = 10
+        # enable_eval is set to true by eval_episode() to allow
+        # publish_sensor_observations() and step() to run
+        # enable_eval is set to false in one of the three conditions:
+        # 1) by publish_and_step_for_eval() after an episode is done;
+        # 2) by publish_and_step_for_roam() after a roaming session
+        #    is done;
+        # 3) by main() after all episodes have been evaluated.
+        # all_episodes_evaluated is set to True by main() to indicate
+        # no more episodes left to evaluate. eval_episodes() then signals
+        # back to evaluator, and set it to False again for re-use
+        self.all_episodes_evaluated = False
+        self.enable_eval = False
+        self.enable_eval_cv = Condition()
 
-            # publish to sensor topics
-            # we create one topic for each of RGB, Depth and GPS+Compass
-            # sensor
-            if "RGB_SENSOR" in self.config.SIMULATOR.AGENT_0.SENSORS:
-                topic_name = f"{robot_namespace}/rgb" if robot_namespace else "rgb"
-                self.pub_rgb = rospy.Publisher(topic_name, Image, queue_size=self.pub_queue_size)
-            if "DEPTH_SENSOR" in self.config.SIMULATOR.AGENT_0.SENSORS:
-                topic_name = f"{robot_namespace}/depth" if robot_namespace else "depth"
-                if self.use_continuous_agent:
-                    # if we are using a ROS-based agent, we publish depth images
-                    # in type Image
-                    self.pub_depth = rospy.Publisher(
-                        topic_name, Image, queue_size=self.pub_queue_size
-                    )
-                    # also publish depth camera info
-                    camera_info_topic = f"{robot_namespace}/camera_info" if robot_namespace else "camera_info"
-                    self.pub_camera_info = rospy.Publisher(
-                        camera_info_topic, CameraInfo, queue_size=self.pub_queue_size
-                    )
-                else:
-                    # otherwise, we publish in type DepthImage to preserve as much
-                    # accuracy as possible
-                    self.pub_depth = rospy.Publisher(
-                        topic_name, DepthImage, queue_size=self.pub_queue_size
-                    )
-            if "POINTGOAL_WITH_GPS_COMPASS_SENSOR" in self.config.TASK.SENSORS:
-                topic_name = f"{robot_namespace}/pointgoal_with_gps_compass" if robot_namespace else "pointgoal_with_gps_compass"
-                self.pub_pointgoal_with_gps_compass = rospy.Publisher(
-                    topic_name,
-                    PointGoalWithGPSCompass,
-                    queue_size=self.pub_queue_size
+        # enable_reset is set to true by eval_episode() or roam() to allow
+        # reset() to run
+        # enable_reset is set to false by reset() after simulator reset
+        self.enable_reset_cv = Condition()
+        with self.enable_reset_cv:
+            self.enable_reset = False
+            self.enable_roam = False
+            self.episode_id_last = None
+            self.scene_id_last = None
+
+        # agent velocities/action and variables to keep things synchronized
+        self.command_cv = Condition()
+        with self.command_cv:
+            if self.use_continuous_agent:
+                self.linear_vel = None
+                self.angular_vel = None
+            else:
+                self.action = None
+            self.count_steps = None
+            self.new_command_published = False
+
+        self.observations = None
+
+        # timing variables and guarding lock
+        self.timing_lock = Lock()
+        with self.timing_lock:
+            self.t_reset_elapsed = None
+            self.t_sim_elapsed = None
+
+        # video production variables
+        self.make_video = False
+        self.observations_per_episode = []
+        self.video_frame_counter = 0
+        self.video_frame_period = 1  # NOTE: frame rate defined as x steps/frame
+
+        # set up logger
+        self.logger = utils_logging.setup_logger(full_node_name)
+
+        # establish evaluation service server
+        service_name = f"{PACKAGE_NAME}/{node_name}/{ServiceNames.EVAL_EPISODE}"
+        self.eval_service = rospy.Service(
+            service_name,
+            EvalEpisode,
+            self.eval_episode,
+        )
+
+        # establish roam service server
+        roam_service_name = f"{PACKAGE_NAME}/{node_name}/{ServiceNames.ROAM}"
+        self.roam_service = rospy.Service(
+            roam_service_name, Roam, self.roam
+        )
+
+        # define the max rate at which we publish sensor readings
+        self.pub_rate = float(pub_rate)
+
+        # environment publish and subscribe queue size
+        # TODO: make them configurable by constructor argument
+        self.sub_queue_size = 10
+        self.pub_queue_size = 10
+
+        # Helper function to get topic name with namespace
+        def get_topic_name(topic):
+            if robot_namespace:
+                return f"{robot_namespace}/{topic}"
+            return topic
+
+        # publish to sensor topics
+        # we create one topic for each of RGB, Depth and GPS+Compass
+        # sensor
+        if "RGB_SENSOR" in self.config.SIMULATOR.AGENT_0.SENSORS:
+            self.pub_rgb = rospy.Publisher(get_topic_name("rgb"), Image, queue_size=self.pub_queue_size)
+        if "DEPTH_SENSOR" in self.config.SIMULATOR.AGENT_0.SENSORS:
+            if self.use_continuous_agent:
+                # if we are using a ROS-based agent, we publish depth images
+                # in type Image
+                self.pub_depth = rospy.Publisher(
+                    get_topic_name("depth"), Image, queue_size=self.pub_queue_size
                 )
-
-            # 추가된 publishers: odom, scan
-            if self.use_continuous_agent:
-                # Odometry publisher 추가
-                odom_topic = f"{robot_namespace}/odom" if robot_namespace else "odom"
-                self.pub_odom = rospy.Publisher(odom_topic, Odometry, queue_size=self.pub_queue_size)
-                
-                # LaserScan publisher 추가 (depth를 scan으로 변환)
-                scan_topic = f"{robot_namespace}/scan" if robot_namespace else "scan"
-                self.pub_scan = rospy.Publisher(scan_topic, LaserScan, queue_size=self.pub_queue_size)
-
-            # subscribe from command topics
-            if self.use_continuous_agent:
-                topic_name = f"{robot_namespace}/cmd_vel" if robot_namespace else "cmd_vel"
-                self.sub = rospy.Subscriber(
-                    topic_name, Twist, self.callback, queue_size=self.sub_queue_size
+                # also publish depth camera info
+                self.pub_camera_info = rospy.Publisher(
+                    get_topic_name("camera_info"), CameraInfo, queue_size=self.pub_queue_size
                 )
             else:
-                topic_name = f"{robot_namespace}/action" if robot_namespace else "action"
-                self.sub = rospy.Subscriber(
-                    topic_name, Int16, self.callback, queue_size=self.sub_queue_size
+                # otherwise, we publish in type DepthImage to preserve as much
+                # accuracy as possible
+                self.pub_depth = rospy.Publisher(
+                    get_topic_name("depth"), DepthImage, queue_size=self.pub_queue_size
                 )
+        if "POINTGOAL_WITH_GPS_COMPASS_SENSOR" in self.config.TASK.SENSORS:
+            self.pub_pointgoal_with_gps_compass = rospy.Publisher(
+                get_topic_name("pointgoal_with_gps_compass"),
+                PointGoalWithGPSCompass,
+                queue_size=self.pub_queue_size
+            )
 
-            # wait until connections with the agent is established (with timeout)
-            self.logger.info("env making sure agent is subscribed to sensor topics...")
-            connection_timeout = 10.0  # 10초 타임아웃
-            start_time = time.time()
-            while (
-                self.pub_rgb.get_num_connections() == 0
-                or self.pub_depth.get_num_connections() == 0
-                or self.pub_pointgoal_with_gps_compass.get_num_connections() == 0
-            ):
-                if time.time() - start_time > connection_timeout:
-                    self.logger.warn(f"Timeout waiting for subscribers. Continuing anyway...")
-                    self.logger.warn(f"RGB connections: {self.pub_rgb.get_num_connections()}")
-                    self.logger.warn(f"Depth connections: {self.pub_depth.get_num_connections()}")
-                    self.logger.warn(f"GPS connections: {self.pub_pointgoal_with_gps_compass.get_num_connections()}")
-                    break
-                time.sleep(0.1)
+        # subscribe from command topics
+        if self.use_continuous_agent:
+            self.sub = rospy.Subscriber(
+                get_topic_name("cmd_vel"), Twist, self.callback, queue_size=self.sub_queue_size
+            )
+        else:
+            self.sub = rospy.Subscriber(
+                get_topic_name("action"), Int16, self.callback, queue_size=self.sub_queue_size
+            )
 
-            self.logger.info("env initialized")
+                # wait until connections with the agent is established (with timeout for multi-robot)
+        self.logger.info("env making sure agent is subscribed to sensor topics...")
+        
+        # 멀티로봇 환경에서는 타임아웃 적용
+        import time
+        timeout = 1.0  # 10초 타임아웃
+        start_time = time.time()
+        
+        while (
+            self.pub_rgb.get_num_connections() == 0
+            or self.pub_depth.get_num_connections() == 0
+            or self.pub_pointgoal_with_gps_compass.get_num_connections() == 0
+        ):
+            if time.time() - start_time > timeout:
+                self.logger.warning("Timeout waiting for sensor topic subscribers. Proceeding anyway...")
+                break
+            time.sleep(0.1)
+        
+        if (self.pub_rgb.get_num_connections() > 0 and 
+            self.pub_depth.get_num_connections() > 0 and 
+            self.pub_pointgoal_with_gps_compass.get_num_connections() > 0):
+            self.logger.info("All sensor topics have subscribers")
+        else:
+            self.logger.warning("Some sensor topics may not have subscribers, but continuing...")
+
+        self.logger.info("env initialized")
+
     def reset(self):
         r"""
         Resets the agent and the simulator. Requires being called only from
@@ -495,135 +488,7 @@ class HabitatEnvNode:
                 observations_ros[sensor_uuid] = sensor_msg
 
         return observations_ros
-    def publish_tf(self, current_time):
-        """각 로봇별 TF 발행"""
-        try:
-            # 시뮬레이터에서 현재 agent 상태 가져오기
-            agent_state = self.env._env._sim.get_agent_state()
-            position = agent_state.position
-            rotation = agent_state.rotation  # quaternion [x, y, z, w]
-            
-            # base_frame 설정 (원본과 동일하게)
-            base_frame = "base_frame"  # 원본에서는 robot_namespace 없이 base_frame 사용
-            odom_frame = f"{self.robot_namespace}/odom" if self.robot_namespace else "odom"
-            
-            # odom -> base_frame TF
-            t = TransformStamped()
-            t.header.stamp = current_time
-            t.header.frame_id = odom_frame
-            t.child_frame_id = base_frame
-            
-            t.transform.translation.x = position[0]
-            t.transform.translation.y = position[1] 
-            t.transform.translation.z = position[2]
-            
-            t.transform.rotation.x = rotation.x
-            t.transform.rotation.y = rotation.y
-            t.transform.rotation.z = rotation.z
-            t.transform.rotation.w = rotation.w
-            
-            self.tf_broadcaster.sendTransform(t)
-        except Exception as e:
-            self.logger.warn(f"Failed to publish TF: {e}")
-    def publish_odometry(self, current_time):
-        """Odometry 메시지 발행"""
-        try:
-            agent_state = self.env._env._sim.get_agent_state()
-            position = agent_state.position
-            rotation = agent_state.rotation
-            
-            odom = Odometry()
-            odom.header.stamp = current_time
-            odom.header.frame_id = f"{self.robot_namespace}/odom" if self.robot_namespace else "odom"
-            odom.child_frame_id = "base_frame"  # 원본과 동일하게 base_frame 사용
-            
-            # Position
-            odom.pose.pose.position.x = position[0]
-            odom.pose.pose.position.y = position[1]
-            odom.pose.pose.position.z = position[2]
-            
-            # Orientation
-            odom.pose.pose.orientation.x = rotation.x
-            odom.pose.pose.orientation.y = rotation.y
-            odom.pose.pose.orientation.z = rotation.z
-            odom.pose.pose.orientation.w = rotation.w
-            
-            # Covariance matrices (simple identity)
-            odom.pose.covariance = [0.01] * 36
-            odom.twist.covariance = [0.01] * 36
-            
-            # Velocity (간단한 추정)
-            if self.prev_position is not None and self.prev_time is not None:
-                dt = (current_time - self.prev_time).to_sec()
-                if dt > 0:
-                    vel_x = (position[0] - self.prev_position[0]) / dt
-                    vel_y = (position[1] - self.prev_position[1]) / dt
-                    vel_z = (position[2] - self.prev_position[2]) / dt
-                    odom.twist.twist.linear.x = vel_x
-                    odom.twist.twist.linear.y = vel_y
-                    odom.twist.twist.linear.z = vel_z
-                    
-                    # Angular velocity estimation (simplified)
-                    if self.prev_orientation is not None:
-                        # This is a simplified angular velocity calculation
-                        # For more accurate results, proper quaternion differentiation should be used
-                        odom.twist.twist.angular.z = 0.0  # Placeholder
-            
-            self.prev_position = position
-            self.prev_orientation = rotation
-            self.prev_time = current_time
-            
-            self.pub_odom.publish(odom)
-        except Exception as e:
-            self.logger.warn(f"Failed to publish odometry: {e}")
 
-    def publish_laser_scan(self, depth_msg, current_time):
-        """Depth 이미지를 LaserScan으로 변환하여 발행"""
-        if depth_msg is None:
-            return
-            
-        try:
-            # Depth 이미지를 numpy array로 변환
-            if hasattr(depth_msg, 'data'):
-                # DepthImage 메시지인 경우
-                depth_array = np.array(depth_msg.data).reshape(depth_msg.height, depth_msg.width)
-            else:
-                # Image 메시지인 경우
-                from cv_bridge import CvBridge
-                bridge = CvBridge()
-                depth_array = bridge.imgmsg_to_cv2(depth_msg, desired_encoding="passthrough")
-            
-            # 이미지 크기 확인
-            if len(depth_array.shape) == 3:
-                depth_array = np.squeeze(depth_array, axis=2)
-            
-            # 중앙 가로줄만 사용하여 2D 스캔 생성
-            center_row = depth_array[depth_array.shape[0] // 2, :]
-            
-            scan = LaserScan()
-            scan.header.stamp = current_time
-            scan.header.frame_id = "base_frame"  # 원본과 동일하게 base_frame 사용
-            
-            # LaserScan 파라미터 설정
-            scan.angle_min = -1.57  # -90도
-            scan.angle_max = 1.57   # +90도
-            scan.angle_increment = 3.14 / len(center_row)
-            scan.time_increment = 0.0
-            scan.scan_time = 0.1
-            scan.range_min = 0.1
-            scan.range_max = 10.0
-            
-            # depth 값들을 range로 변환
-            scan.ranges = []
-            for depth_val in center_row:
-                if np.isfinite(depth_val) and depth_val > scan.range_min and depth_val < scan.range_max:
-                    scan.ranges.append(float(depth_val))
-                else:
-                    scan.ranges.append(float('inf'))
-            
-            self.pub_scan.publish(scan)
-        except Exception as e:
-            self.logger.warn(f"Failed to publish laser scan: {e}")
     def publish_sensor_observations(self):
         r"""
         Waits until evaluation is enabled, then publishes current simulator
@@ -632,19 +497,6 @@ class HabitatEnvNode:
         """
         # pack observations in ROS message
         observations_ros = self.obs_to_msgs(self.observations)
-        
-        # 현재 시간
-        current_time = rospy.Time.now()
-        
-        # TF 발행 (각 로봇별로)
-        self.publish_tf(current_time)
-        
-        # Odometry 발행
-        if self.use_continuous_agent:
-            self.publish_odometry(current_time)
-            self.publish_laser_scan(observations_ros.get("depth"), current_time)
-        
-        # 기존 센서 발행 코드
         for sensor_uuid, _ in self.observations.items():
             # we publish to each of RGB, Depth and Ptgoal/GPS+Compass sensor
             if sensor_uuid == "rgb":
@@ -663,6 +515,7 @@ class HabitatEnvNode:
                 self.pub_pointgoal_with_gps_compass.publish(
                     observations_ros["pointgoal_with_gps_compass"]
                 )
+
     def make_depth_camera_info_msg(self, header, height, width):
         r"""
         Create camera info message for depth camera.
