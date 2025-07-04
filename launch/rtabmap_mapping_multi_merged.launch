@@ -1,0 +1,112 @@
+<?xml version="1.0"?>
+<!-- launch/rtabmap_mapping_multi_hector_merged.launch -->
+<launch>
+  <arg name="num_robots" default="2"/>
+  <arg name="geotiff_map_file_path" default="$(find hector_geotiff)/maps"/>
+
+  <param name="/use_sim_time" value="false"/>
+
+  <!-- Global TF publishers -->
+  <node name="static_tf0" pkg="tf" type="static_transform_publisher" args="1 0 0 0 0 0  /world /map 100"/>
+
+  <!-- RViz for visualization -->
+  <node pkg="rviz" type="rviz" name="rviz" args="-d $(find hector_slam_launch)/rviz_cfg/mapping_demo.rviz"/>
+
+  <!-- Robot 0 -->
+  <!-- Hector mapping for robot_0 -->
+  <include file="$(find ros_x_habitat)/launch/hector_mapping_default.launch">
+    <arg name="base_frame" value="robot_0/base_frame"/>
+    <arg name="odom_frame" value="robot_0/odom"/>
+    <arg name="scan_topic" value="/robot_0/scan"/>
+  </include>
+
+  <!-- RGBD synchronization for robot_0 -->
+  <node pkg="nodelet" type="nodelet" name="robot0_rgbd_sync" args="standalone rtabmap_sync/rgbd_sync" output="screen">
+    <remap from="rgb/image"       to="/robot_0/rgb"/>
+    <remap from="depth/image"     to="/robot_0/depth"/>
+    <remap from="rgb/camera_info" to="/robot_0/camera_info"/>
+    <remap from="rgbd_image"      to="/robot_0/rgbd_image"/>
+    <param name="approx_sync"     value="true"/>
+  </node>
+  
+  <!-- RTAB-Map for robot_0 -->
+  <node name="robot0_rtabmap" pkg="rtabmap_slam" type="rtabmap" output="screen" args="--delete_db_on_start">
+        <param name="frame_id" type="string" value="robot_0/base_frame"/>
+        <param name="subscribe_depth" type="bool" value="false"/>
+        <param name="subscribe_rgbd" type="bool" value="true"/>
+        <param name="subscribe_scan" type="bool" value="true"/>
+        <remap from="odom" to="/robot_0/odom"/>
+        <remap from="scan" to="/robot_0/scan"/>
+        <remap from="rgbd_image" to="/robot_0/rgbd_image"/>
+        <remap from="map" to="/robot_0/rtab_map"/>
+        <remap from="grid_map" to="/robot_0/grid_map"/>
+        <remap from="trajectory" to="/robot_0/trajectory"/>
+        <param name="queue_size" type="int" value="10"/>
+        <!-- RTAB-Map's parameters -->
+        <param name="RGBD/NeighborLinkRefining" type="string" value="true"/>
+        <param name="RGBD/ProximityBySpace"     type="string" value="true"/>
+        <param name="RGBD/AngularUpdate"        type="string" value="0.01"/>
+        <param name="RGBD/LinearUpdate"         type="string" value="0.01"/>
+        <param name="RGBD/OptimizeFromGraphEnd" type="string" value="false"/>
+        <param name="Grid/FromDepth"            type="string" value="false"/>
+        <param name="Reg/Force3DoF"             type="string" value="true"/>
+        <param name="Reg/Strategy"              type="string" value="1"/>
+        <!-- ICP parameters -->
+        <param name="Icp/VoxelSize"                 type="string" value="0.05"/>
+        <param name="Icp/MaxCorrespondenceDistance" type="string" value="0.1"/>
+  </node>
+
+  <!-- Robot 1 -->
+  <!-- Hector mapping for robot_1 -->
+  <group ns="robot_1_hector">
+    <include file="$(find ros_x_habitat)/launch/hector_mapping_default.launch">
+      <arg name="base_frame" value="robot_1/base_frame"/>
+      <arg name="odom_frame" value="robot_1/odom"/>
+      <arg name="scan_topic" value="/robot_1/scan"/>
+    </include>
+  </group>
+
+  <!-- RGBD synchronization for robot_1 -->
+  <node pkg="nodelet" type="nodelet" name="robot1_rgbd_sync" args="standalone rtabmap_sync/rgbd_sync" output="screen">
+    <remap from="rgb/image"       to="/robot_1/rgb"/>
+    <remap from="depth/image"     to="/robot_1/depth"/>
+    <remap from="rgb/camera_info" to="/robot_1/camera_info"/>
+    <remap from="rgbd_image"      to="/robot_1/rgbd_image"/>
+    <param name="approx_sync"     value="true"/>
+  </node>
+  
+  <!-- RTAB-Map for robot_1 -->
+  <node name="robot1_rtabmap" pkg="rtabmap_slam" type="rtabmap" output="screen" args="--delete_db_on_start">
+        <param name="frame_id" type="string" value="robot_1/base_frame"/>
+        <param name="subscribe_depth" type="bool" value="false"/>
+        <param name="subscribe_rgbd" type="bool" value="true"/>
+        <param name="subscribe_scan" type="bool" value="true"/>
+        <remap from="odom" to="/robot_1/odom"/>
+        <remap from="scan" to="/robot_1/scan"/>
+        <remap from="rgbd_image" to="/robot_1/rgbd_image"/>
+        <remap from="map" to="/robot_1/rtab_map"/>
+        <remap from="grid_map" to="/robot_1/grid_map"/>
+        <remap from="trajectory" to="/robot_1/trajectory"/>
+        <param name="queue_size" type="int" value="10"/>
+        <!-- RTAB-Map's parameters -->
+        <param name="RGBD/NeighborLinkRefining" type="string" value="true"/>
+        <param name="RGBD/ProximityBySpace"     type="string" value="true"/>
+        <param name="RGBD/AngularUpdate"        type="string" value="0.01"/>
+        <param name="RGBD/LinearUpdate"         type="string" value="0.01"/>
+        <param name="RGBD/OptimizeFromGraphEnd" type="string" value="false"/>
+        <param name="Grid/FromDepth"            type="string" value="false"/>
+        <param name="Reg/Force3DoF"             type="string" value="true"/>
+        <param name="Reg/Strategy"              type="string" value="1"/>
+        <!-- ICP parameters -->
+        <param name="Icp/VoxelSize"                 type="string" value="0.05"/>
+        <param name="Icp/MaxCorrespondenceDistance" type="string" value="0.1"/>
+  </node>
+
+  <!-- 간단한 맵 합치기 노드 (Python 스크립트) -->
+  <node pkg="ros_x_habitat" type="simple_map_merger.py" name="simple_map_merger" output="screen">
+    <remap from="map1" to="/map"/>
+    <remap from="map2" to="/robot_1_hector/map"/>
+    <remap from="merged_map" to="/merged_hector_map"/>
+  </node>
+
+</launch>

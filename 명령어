@@ -17,4 +17,4 @@ python src/scripts/roam_with_joy_multi.py \
     --video-frame-period 10 \
     --num-robots 2
 
- roslaunch launch/rtabmap_mapping.launch
+ roslaunch launch/rtabmap_mapping_multi_merged.launch
