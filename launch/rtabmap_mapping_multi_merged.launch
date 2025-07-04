@@ -14,11 +14,13 @@
 
   <!-- Robot 0 -->
   <!-- Hector mapping for robot_0 -->
-  <include file="$(find ros_x_habitat)/launch/hector_mapping_default.launch">
-    <arg name="base_frame" value="robot_0/base_frame"/>
-    <arg name="odom_frame" value="robot_0/odom"/>
-    <arg name="scan_topic" value="/robot_0/scan"/>
-  </include>
+  <group ns="robot_0_hector">
+    <include file="$(find ros_x_habitat)/launch/hector_mapping_default.launch">
+      <arg name="base_frame" value="robot_0/base_frame"/>
+      <arg name="odom_frame" value="robot_0/odom"/>
+      <arg name="scan_topic" value="/robot_0/scan"/>
+    </include>
+  </group>
 
   <!-- RGBD synchronization for robot_0 -->
   <node pkg="nodelet" type="nodelet" name="robot0_rgbd_sync" args="standalone rtabmap_sync/rgbd_sync" output="screen">
@@ -104,7 +106,7 @@
 
   <!-- 간단한 맵 합치기 노드 (Python 스크립트) -->
   <node pkg="ros_x_habitat" type="simple_map_merger.py" name="simple_map_merger" output="screen">
-    <remap from="map1" to="/map"/>
+    <remap from="map1" to="/robot_0_hector/map"/>
     <remap from="map2" to="/robot_1_hector/map"/>
     <remap from="merged_map" to="/merged_hector_map"/>
   </node>

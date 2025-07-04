@@ -13,7 +13,7 @@ class SimpleMapMerger:
         self.map2 = None
         
         # 구독자
-        self.sub1 = rospy.Subscriber('/map', OccupancyGrid, self.map1_callback)
+        self.sub1 = rospy.Subscriber('/robot_0_hector/map', OccupancyGrid, self.map1_callback)
         self.sub2 = rospy.Subscriber('/robot_1_hector/map', OccupancyGrid, self.map2_callback)
         
         # 발행자
